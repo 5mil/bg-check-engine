@@ -1,6 +1,6 @@
 window.BGCHECK_CONFIG = {
   // --- FILL THESE IN ---
-  githubClientId: "",          // GitHub OAuth App Client ID
+  githubClientId: "Ov23liZLjGS5A067KS2m",
   oauthWorkerUrl: "",          // https://bg-check-oauth.YOUR.workers.dev
 
   // --- LIVE RAILWAY BACKEND ---
