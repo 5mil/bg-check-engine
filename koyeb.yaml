@@ -1,0 +1,41 @@
+# Koyeb service definition
+# Docs: https://www.koyeb.com/docs/apps/deploy-with-git
+name: bg-check-engine
+services:
+  - name: api
+    type: web
+    git:
+      repository: github.com/5mil/bg-check-engine
+      branch: main
+    build:
+      buildpack: true
+    run:
+      command: node src/index.js
+    instance_type: nano
+    regions:
+      - was   # Washington D.C. — closest to US public record APIs
+    ports:
+      - port: 3000
+        protocol: http
+    health_checks:
+      - path: /health
+        port: 3000
+        protocol: http
+        interval: 30
+        timeout: 5
+        unhealthy_threshold: 3
+        healthy_threshold: 1
+    env:
+      # Set these in the Koyeb dashboard or CLI — do NOT hardcode values here
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: "production"
+      # Secrets (add via dashboard):
+      # STRIPE_SECRET_KEY
+      # STRIPE_WEBHOOK_SECRET
+      # ONFIDO_API_TOKEN
+      # PACER_USERNAME
+      # PACER_PASSWORD
+      # COURTLISTENER_TOKEN
+      # OPENSANCTIONS_API_KEY
