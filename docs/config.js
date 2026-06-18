@@ -1,9 +1,12 @@
 window.BGCHECK_CONFIG = {
-  githubClientId: "YOUR_GITHUB_OAUTH_APP_CLIENT_ID",
-  // URL of your deployed Cloudflare Worker (worker/oauth)
-  oauthWorkerUrl: "https://bg-check-oauth.YOUR-SUBDOMAIN.workers.dev",
-  apiBaseUrl: "https://YOUR-API-HOST.example.com/api",
-  allowedUsers: ["5mil"],
-  allowedOrgs: [],
-  redirectPath: "/bg-check-engine/"
+  // --- FILL THESE IN AFTER SETUP ---
+  githubClientId: "",          // GitHub OAuth App Client ID
+  oauthWorkerUrl: "",          // https://bg-check-oauth.YOUR.workers.dev
+  apiBaseUrl: "",              // https://YOUR-BACKEND/api
+
+  // --- READY TO GO ---
+  allowedUsers: ["5mil"],      // GitHub usernames allowed access
+  allowedOrgs: [],             // GitHub org logins (optional)
+  redirectPath: "/bg-check-engine/",
+  demoMode: true               // Shows mock results when apiBaseUrl is empty
 };
