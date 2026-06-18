@@ -1,8 +1,43 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const engine = require('./engine');
 const { createStripeSession } = require('./identity/stripe');
 const { createOnfidoApplicant, createOnfidoCheck } = require('./identity/onfido');
+
+/**
+ * POST /api/oauth/exchange
+ * Exchanges a GitHub OAuth code for an access_token.
+ * Replaces the Cloudflare Worker — runs entirely on Railway.
+ * Body: { code }
+ */
+router.post('/oauth/exchange', async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'code is required.' });
+
+  const clientId     = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return res.status(500).json({ error: 'GitHub OAuth env vars not set on server.' });
+  }
+
+  try {
+    const response = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      { client_id: clientId, client_secret: clientSecret, code },
+      { headers: { Accept: 'application/json' } }
+    );
+
+    const data = response.data;
+    if (data.error) return res.status(400).json({ error: data.error_description || data.error });
+
+    res.json({ access_token: data.access_token, token_type: data.token_type, scope: data.scope });
+  } catch (err) {
+    console.error('OAuth exchange error:', err.message);
+    res.status(500).json({ error: 'OAuth exchange failed.' });
+  }
+});
 
 /**
  * POST /api/check
@@ -51,8 +86,6 @@ router.post('/verify/session', async (req, res) => {
 
 /**
  * POST /api/verify/onfido/check
- * Trigger an Onfido background check on an existing applicant.
- * Body: { applicantId }
  */
 router.post('/verify/onfido/check', async (req, res) => {
   const { applicantId } = req.body;

@@ -1,12 +1,11 @@
 window.BGCHECK_CONFIG = {
-  // --- FILL THESE IN ---
   githubClientId: "Ov23liZLjGS5A067KS2m",
-  oauthWorkerUrl: "",          // https://bg-check-oauth.YOUR.workers.dev
 
-  // --- LIVE RAILWAY BACKEND ---
+  // Railway handles OAuth exchange now — no Cloudflare Worker needed
+  oauthWorkerUrl: "https://bg-check-engine-production.up.railway.app/api",
+
   apiBaseUrl: "https://bg-check-engine-production.up.railway.app/api",
 
-  // --- READY TO GO ---
   allowedUsers: ["5mil"],
   allowedOrgs: [],
   redirectPath: "/bg-check-engine/",
