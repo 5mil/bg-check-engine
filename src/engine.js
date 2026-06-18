@@ -7,18 +7,20 @@ const ofac           = require('./providers/ofac');
 const fda            = require('./providers/fda');
 const gsa            = require('./providers/gsa');
 const interpol       = require('./providers/interpol');
+const arrestRecords  = require('./providers/arrestRecords');
+const crimeMapping   = require('./providers/crimeMapping');
 
 /**
  * runCheck - Orchestrates all public record providers in parallel.
  * @param {object} params - { firstName, lastName, state, dob }
- * @returns {object} Aggregated results keyed by provider
  */
 async function runCheck({ firstName, lastName, state, dob }) {
   const query = { firstName, lastName, state, dob };
 
   const [
     courts, offenders, sanctions, stateRecords,
-    fbiResult, ofacResult, fdaResult, gsaResult, interpolResult
+    fbiResult, ofacResult, fdaResult, gsaResult, interpolResult,
+    arrestResult, crimeMappingResult
   ] = await Promise.allSettled([
     courtListener.search(query),
     nsopw.search(query),
@@ -29,6 +31,8 @@ async function runCheck({ firstName, lastName, state, dob }) {
     fda.search(query),
     gsa.search(query),
     interpol.search(query),
+    arrestRecords.search(query),
+    crimeMapping.search(query),
   ]);
 
   const unwrap = r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message };
@@ -43,6 +47,8 @@ async function runCheck({ firstName, lastName, state, dob }) {
     fda:            unwrap(fdaResult),
     gsa:            unwrap(gsaResult),
     interpol:       unwrap(interpolResult),
+    arrestRecords:  unwrap(arrestResult),
+    crimeMapping:   unwrap(crimeMappingResult),
     meta: {
       query: { firstName, lastName, state, dob },
       timestamp: new Date().toISOString(),
