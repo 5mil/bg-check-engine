@@ -22,17 +22,9 @@ function buildGithubAuthUrl() {
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
-function saveToken(token) {
-  localStorage.setItem('github_token', token);
-}
-
-function getToken() {
-  return localStorage.getItem('github_token');
-}
-
-function clearToken() {
-  localStorage.removeItem('github_token');
-}
+function saveToken(token) { localStorage.setItem('github_token', token); }
+function getToken() { return localStorage.getItem('github_token'); }
+function clearToken() { localStorage.removeItem('github_token'); }
 
 async function githubFetch(path) {
   const token = getToken();
@@ -42,43 +34,45 @@ async function githubFetch(path) {
       Accept: 'application/vnd.github+json',
     },
   });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+  if (!res.ok) throw new Error(`GitHub API ${res.status}`);
   return res.json();
 }
 
-async function getUserOrgs() {
-  try {
-    return await githubFetch('/user/orgs');
-  } catch {
-    return [];
+async function exchangeCode(code) {
+  if (!config.oauthWorkerUrl || config.oauthWorkerUrl.includes('YOUR-SUBDOMAIN')) {
+    throw new Error('Set oauthWorkerUrl in docs/config.js to your deployed Cloudflare Worker URL.');
   }
+  const res = await fetch(`${config.oauthWorkerUrl}/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.access_token;
 }
 
 async function enforceAccess(user) {
   const userAllowed = !config.allowedUsers.length || config.allowedUsers.includes(user.login);
   if (userAllowed) return true;
-
   if (config.allowedOrgs.length) {
-    const orgs = await getUserOrgs();
-    const orgLogins = orgs.map(org => org.login);
-    return config.allowedOrgs.some(org => orgLogins.includes(org));
+    try {
+      const orgs = await githubFetch('/user/orgs');
+      return config.allowedOrgs.some(org => orgs.map(o => o.login).includes(org));
+    } catch { return false; }
   }
-
   return false;
 }
 
 async function loadUser() {
-  const token = getToken();
-  if (!token) return;
-
+  if (!getToken()) return;
   const user = await githubFetch('/user');
   const allowed = await enforceAccess(user);
   if (!allowed) {
     clearToken();
-    alert('You are signed in, but not authorized to use this tool.');
+    alert('Not authorized to use this tool.');
     return;
   }
-
   avatar.src = user.avatar_url;
   userName.textContent = user.name || 'Signed in';
   userLogin.textContent = `@${user.login}`;
@@ -87,22 +81,22 @@ async function loadUser() {
   loginBtn.classList.add('hidden');
 }
 
-async function exchangeCodeForToken(code) {
-  alert('GitHub Pages cannot safely exchange OAuth codes by itself. Configure a backend or serverless function to exchange the code for a token, then store it here.');
-  console.log('OAuth code received:', code);
-}
-
-function maybeHandleOAuthRedirect() {
+async function maybeHandleOAuthRedirect() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
-  if (code) {
-    exchangeCodeForToken(code);
-    window.history.replaceState({}, document.title, window.location.pathname);
+  if (!code) return;
+  window.history.replaceState({}, document.title, window.location.pathname);
+  try {
+    const token = await exchangeCode(code);
+    saveToken(token);
+    await loadUser();
+  } catch (err) {
+    alert(`Login failed: ${err.message}`);
   }
 }
 
 loginBtn.addEventListener('click', () => {
-  if (!config.githubClientId || config.githubClientId === 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID') {
+  if (!config.githubClientId || config.githubClientId.includes('YOUR_')) {
     alert('Set githubClientId in docs/config.js first.');
     return;
   }
@@ -116,8 +110,7 @@ logoutBtn.addEventListener('click', () => {
 
 checkForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  results.textContent = 'Loading...';
-
+  results.textContent = 'Searching...';
   try {
     const payload = {
       firstName: document.getElementById('firstName').value,
@@ -125,13 +118,11 @@ checkForm.addEventListener('submit', async (event) => {
       state: document.getElementById('state').value || undefined,
       dob: document.getElementById('dob').value || undefined,
     };
-
     const res = await fetch(`${config.apiBaseUrl}/check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
     results.textContent = JSON.stringify(data, null, 2);
@@ -141,7 +132,4 @@ checkForm.addEventListener('submit', async (event) => {
 });
 
 maybeHandleOAuthRedirect();
-loadUser().catch(err => {
-  console.error(err);
-  clearToken();
-});
+loadUser().catch(() => clearToken());

@@ -13,7 +13,7 @@
           <p class="eyebrow">GitHub Pages Demo</p>
           <h1>Background Check Engine</h1>
           <p class="subtitle">
-            Search public information and launch identity verification flows after signing in with GitHub.
+            Search public records and launch identity verification flows. Sign in with GitHub to continue.
           </p>
         </div>
         <button id="loginBtn" class="primary">Sign in with GitHub</button>
@@ -31,47 +31,37 @@
           <button id="logoutBtn" class="secondary">Sign out</button>
         </section>
 
-        <section class="card">
-          <h2>Access control</h2>
-          <p class="muted">
-            This GitHub Pages frontend uses GitHub OAuth in the browser and stores the access token locally. For production,
-            move OAuth token exchange to a backend or serverless function and restrict repo/org membership there.
-          </p>
-          <ul>
-            <li>Client ID is configured in <code>config.js</code>.</li>
-            <li>Optional org/user allowlist is enforced in the frontend.</li>
-            <li>API base URL is configured in <code>config.js</code>.</li>
-          </ul>
-        </section>
-
         <section class="card hidden" id="toolCard">
           <h2>Run a check</h2>
           <form id="checkForm">
             <div class="grid">
-              <label>
-                First name
-                <input type="text" id="firstName" required />
-              </label>
-              <label>
-                Last name
-                <input type="text" id="lastName" required />
-              </label>
-              <label>
-                State
-                <input type="text" id="state" placeholder="NY" />
-              </label>
-              <label>
-                DOB
-                <input type="date" id="dob" />
-              </label>
+              <label>First name<input type="text" id="firstName" required /></label>
+              <label>Last name<input type="text" id="lastName" required /></label>
+              <label>State<input type="text" id="state" placeholder="NY" /></label>
+              <label>DOB<input type="date" id="dob" /></label>
             </div>
             <button class="primary" type="submit">Search public records</button>
           </form>
           <pre id="results" class="results"></pre>
         </section>
-      </main>
-    </div>
 
+        <section class="card">
+          <h2>Setup status</h2>
+          <ul>
+            <li>Deploy the Cloudflare Worker in <code>worker/oauth/</code> with <code>wrangler deploy</code></li>
+            <li>Set <code>oauthWorkerUrl</code> in <code>docs/config.js</code></li>
+            <li>Set <code>githubClientId</code> in <code>docs/config.js</code></li>
+            <li>Enable GitHub Pages from <strong>Settings → Pages → /docs</strong></li>
+          </ul>
+        </section>
+      </main>
+
+      <footer style="text-align:center;padding:32px;color:#5a7099;font-size:13px;">
+        <a href="./tos.html">Terms of Service</a> &nbsp;·&nbsp;
+        <a href="./privacy.html">Privacy Policy</a> &nbsp;·&nbsp;
+        <a href="https://github.com/5mil/bg-check-engine">GitHub</a>
+      </footer>
+    </div>
     <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
