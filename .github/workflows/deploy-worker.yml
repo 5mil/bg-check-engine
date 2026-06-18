@@ -1,0 +1,24 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/oauth/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy OAuth Worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: worker/oauth
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+          ALLOWED_ORIGIN: https://5mil.github.io

@@ -1,13 +1,16 @@
 name = "bg-check-oauth"
 main = "src/index.js"
 compatibility_date = "2024-06-01"
+workers_dev = true
 
-# Secrets — DO NOT put real values here.
-# Set them via CLI:
-#   wrangler secret put GITHUB_CLIENT_ID
-#   wrangler secret put GITHUB_CLIENT_SECRET
-#   wrangler secret put ALLOWED_ORIGIN
+# Routes (uncomment and set your zone after first deploy if using a custom domain)
+# routes = [
+#   { pattern = "api.yourdomain.com/oauth/*", zone_name = "yourdomain.com" }
+# ]
 
-[vars]
-# Public vars only (non-secret)
-ENV = "production"
+# Secrets are NOT stored here. Set them via:
+#   npx wrangler secret put GITHUB_CLIENT_ID
+#   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   npx wrangler secret put ALLOWED_ORIGIN
+#
+# After deploy, paste the workers.dev URL into docs/config.js → oauthWorkerUrl

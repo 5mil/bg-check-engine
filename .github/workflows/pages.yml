@@ -1,0 +1,18 @@
+name: Validate GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required files exist
+        run: |
+          for f in docs/index.html docs/app.js docs/styles.css docs/config.js docs/tos.html docs/privacy.html; do
+            [ -f "$f" ] && echo "OK: $f" || (echo "MISSING: $f" && exit 1)
+          done
