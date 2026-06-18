@@ -8,29 +8,33 @@ const router = require('./router');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Trust Koyeb's proxy layer
 app.set('trust proxy', 1);
 
-app.use(helmet());
-
-// CORS — allow GitHub Pages origin
+// CORS must come before helmet so preflight OPTIONS requests are handled first
 const allowedOrigins = [
   'https://5mil.github.io',
   'http://localhost:3000',
   'http://localhost:5500',
 ];
-app.use(cors({
+
+const corsOptions = {
   origin: (origin, cb) => {
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     cb(new Error('CORS not allowed for: ' + origin));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+  credentials: false,
+};
 
+// Handle preflight for all routes
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+
+app.use(helmet());
 app.use(express.json());
 
-// Rate limiting: 30 requests per 15 minutes per IP
+// Rate limiting
 app.use('/api/', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -39,7 +43,6 @@ app.use('/api/', rateLimit({
   message: { error: 'Too many requests, please try again later.' }
 }));
 
-// Health check endpoint — required by Koyeb
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -50,7 +53,6 @@ app.get('/', (req, res) => {
 
 app.use('/api', router);
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: err.message || 'Internal server error' });
