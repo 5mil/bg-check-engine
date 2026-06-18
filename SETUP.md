@@ -42,7 +42,7 @@ Open `docs/config.js` and fill in:
 window.BGCHECK_CONFIG = {
   githubClientId: "YOUR_CLIENT_ID_FROM_STEP_2",
   oauthWorkerUrl: "https://bg-check-oauth.YOUR-SUBDOMAIN.workers.dev", // from setup.sh output
-  apiBaseUrl: "https://YOUR-API-HOST/api",  // your Railway/Render/Glitch backend
+  apiBaseUrl: "https://YOUR-API-HOST/api",  // your Railway/Render/Fly/Koyeb backend
   allowedUsers: ["5mil"],
   allowedOrgs: [],
   redirectPath: "/bg-check-engine/"
@@ -61,6 +61,19 @@ Commit and push.
 4. Save
 
 Your live URL: **https://5mil.github.io/bg-check-engine/**
+
+---
+
+## Free hosting options for the Express API
+
+| Platform | Free tier | Cold start | Notes |
+|---|---|---|---|
+| [Railway](https://railway.app) | $5 credit/mo (~500hrs) | None | Recommended — no sleep, GitHub auto-deploy |
+| [Render](https://render.com) | 750hrs/mo | ~30s after 15min idle | Add a free keep-alive ping via [cron-job.org](https://cron-job.org) to avoid cold starts |
+| [Fly.io](https://fly.io) | 3 shared VMs free | None | Production-grade, no sleep |
+| [Koyeb](https://koyeb.com) | 1 nano instance free | None | Fast, no sleep, US/EU |
+
+> ⚠️ **Glitch shut down app hosting in 2025** and is no longer a viable option.
 
 ---
 
