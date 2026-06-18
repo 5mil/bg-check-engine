@@ -19,7 +19,7 @@
     "express-rate-limit": "^7.3.1",
     "helmet": "^7.1.0",
     "stripe": "^16.1.0",
-    "@onfido/api": "^3.0.0"
+    "@onfido/api": "^2.6.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

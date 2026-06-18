@@ -1,28 +1,35 @@
+// @onfido/api v2 is CommonJS compatible.
+// v3+ is ESM-only and breaks require() in a CJS project.
 const { Onfido, Region } = require('@onfido/api');
 
-const onfido = new Onfido({
-  apiToken: process.env.ONFIDO_API_TOKEN || '',
-  region: Region.US,
-});
+let onfidoClient = null;
+
+function getClient() {
+  if (!onfidoClient) {
+    if (!process.env.ONFIDO_API_TOKEN) {
+      throw new Error('ONFIDO_API_TOKEN not set.');
+    }
+    onfidoClient = new Onfido({
+      apiToken: process.env.ONFIDO_API_TOKEN,
+      region: Region.US,
+    });
+  }
+  return onfidoClient;
+}
 
 /**
  * Create an Onfido applicant.
- * Applicants are the subjects of identity checks.
  * Docs: https://documentation.onfido.com/#create-applicant
- *
- * Pricing: pay-per-check, sandbox is free.
+ * Pricing: pay-per-check; sandbox is free.
  */
 async function createOnfidoApplicant({ userId, firstName, lastName }) {
-  if (!process.env.ONFIDO_API_TOKEN) {
-    throw new Error('ONFIDO_API_TOKEN not set.');
-  }
+  const onfido = getClient();
 
   const applicant = await onfido.applicant.create({
     firstName: firstName || 'Unknown',
     lastName: lastName || userId,
   });
 
-  // Generate SDK token so frontend can launch the Onfido Smart Capture SDK
   const sdkToken = await onfido.sdkToken.generate({
     applicantId: applicant.id,
     referrer: '*://*/*',
@@ -35,10 +42,12 @@ async function createOnfidoApplicant({ userId, firstName, lastName }) {
 }
 
 /**
- * Create an Onfido check on an existing applicant.
- * report_names options: document, facial_similarity_photo, identity_enhanced, watchlist_standard
+ * Trigger an Onfido check on an existing applicant.
+ * reportNames options: document, facial_similarity_photo, identity_enhanced, watchlist_standard
  */
 async function createOnfidoCheck(applicantId, reportNames = ['document', 'facial_similarity_photo']) {
+  const onfido = getClient();
+
   const check = await onfido.check.create({
     applicantId,
     reportNames,
@@ -56,6 +65,8 @@ async function createOnfidoCheck(applicantId, reportNames = ['document', 'facial
  * Retrieve a completed Onfido check result.
  */
 async function getOnfidoResult(checkId) {
+  const onfido = getClient();
+
   const check = await onfido.check.find(checkId);
   const reports = await Promise.all(
     check.reportIds.map(id => onfido.report.find(id))
