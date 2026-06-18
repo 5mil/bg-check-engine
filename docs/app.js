@@ -19,7 +19,6 @@ if (config.githubClientId && config.oauthWorkerUrl && config.apiBaseUrl) {
   setupBanner.classList.add('hidden');
 }
 
-// --- Auth helpers ---
 const saveToken  = t  => localStorage.setItem('github_token', t);
 const getToken   = () => localStorage.getItem('github_token');
 const clearToken = () => localStorage.removeItem('github_token');
@@ -42,7 +41,8 @@ async function githubFetch(path) {
 }
 
 async function exchangeCode(code) {
-  const r = await fetch(`${config.oauthWorkerUrl}/exchange`, {
+  // Full path: /api/oauth/exchange — oauthWorkerUrl is the base (e.g. https://...railway.app/api)
+  const r = await fetch(`${config.oauthWorkerUrl}/oauth/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -72,7 +72,7 @@ async function loadUser() {
     alert('Your GitHub account is not on the allowlist.');
     return;
   }
-  avatar.src       = user.avatar_url;
+  avatar.src            = user.avatar_url;
   userName.textContent  = user.name || user.login;
   userLogin.textContent = `@${user.login}`;
   userCard.classList.remove('hidden');
@@ -80,13 +80,12 @@ async function loadUser() {
   loginBtn.classList.add('hidden');
 }
 
-// --- OAuth redirect handler ---
 async function maybeHandleOAuthRedirect() {
   const code = new URLSearchParams(location.search).get('code');
   if (!code) return;
   history.replaceState({}, '', location.pathname);
   if (!config.oauthWorkerUrl) {
-    alert('oauthWorkerUrl not set in config.js — cannot exchange OAuth code.');
+    alert('oauthWorkerUrl not set in config.js.');
     return;
   }
   try {
@@ -95,7 +94,6 @@ async function maybeHandleOAuthRedirect() {
   } catch (e) { alert(`Login failed: ${e.message}`); }
 }
 
-// --- Demo mode mock data ---
 function mockResults(payload) {
   return {
     _demo: true,
@@ -111,7 +109,6 @@ function mockResults(payload) {
   };
 }
 
-// --- Event listeners ---
 loginBtn.addEventListener('click', () => {
   if (!config.githubClientId) {
     alert('Set githubClientId in docs/config.js to enable login.');
@@ -138,7 +135,7 @@ checkForm.addEventListener('submit', async e => {
   try {
     let data;
     if (!config.apiBaseUrl || config.demoMode) {
-      await new Promise(r => setTimeout(r, 900)); // fake latency
+      await new Promise(r => setTimeout(r, 900));
       data = mockResults(payload);
     } else {
       const r = await fetch(`${config.apiBaseUrl}/check`, {
@@ -160,5 +157,4 @@ checkForm.addEventListener('submit', async e => {
   }
 });
 
-// Boot
 maybeHandleOAuthRedirect().then(() => loadUser()).catch(() => clearToken());
