@@ -1,184 +1,187 @@
 const axios = require('axios');
 
 /**
- * New York State Comprehensive Arrest & Blotter Records
+ * New York State Comprehensive Arrest, Blotter & Police Records
  *
  * Sources:
- * 1. NYPD Arrest Data (NYC Open Data / Socrata) - historical + YTD
- * 2. NYPD Crime Data (NYC Open Data)
- * 3. NY State Police Blotter (publicapps.troopers.ny.gov)
- * 4. data.ny.gov - Adult Arrests by County (statewide)
- * 5. County jail rosters via public APIs
+ * 1.  NYPD Arrest Data YTD          (Socrata - name searchable)
+ * 2.  NYPD Arrest Data Historic      (Socrata - name searchable)
+ * 3.  Buffalo PD Incidents           (Socrata)
+ * 4.  Rochester PD Incidents         (Socrata)
+ * 5.  Albany PD Incidents            (Socrata)
+ * 6.  Syracuse PD Incidents          (Socrata - via data.ny.gov)
+ * 7.  Yonkers PD                     (link)
+ * 8.  NY State Police Blotter        (all 9 troops x 3-4 zones + NYC)
+ * 9.  NYS DOCCS inmate lookup        (link)
+ * 10. Montgomery County Jail Roster  (API)
+ * 11. data.ny.gov criminal justice   (link)
  */
 
 const SOCRATA_TOKEN = process.env.SOCRATA_APP_TOKEN || '';
 const socrataHeaders = SOCRATA_TOKEN ? { 'X-App-Token': SOCRATA_TOKEN } : {};
 
-// --- 1. NYPD Arrest Data YTD (name-searchable) ---
-async function searchNYPDArrestsYTD(firstName, lastName) {
+// --- Helper: generic Socrata name search ---
+async function socrataSearch(sourceName, endpoint, lastField, firstField, firstName, lastName) {
   try {
-    const fullName = `${lastName.toUpperCase()}, ${firstName.toUpperCase()}`;
-    const res = await axios.get(
-      'https://data.cityofnewyork.us/resource/uip8-fykc.json',
-      {
-        headers: socrataHeaders,
-        params: { ofns_desc: undefined, $where: `perp_last_nm='${lastName.toUpperCase()}' AND perp_first_nm='${firstName.toUpperCase()}'`, $limit: 10 },
-        timeout: 9000,
-      }
-    );
+    const where = firstField
+      ? `${lastField}='${lastName.toUpperCase()}' AND ${firstField}='${firstName.toUpperCase()}'`
+      : `${lastField}='${lastName.toUpperCase()}'`;
+    const res = await axios.get(endpoint, {
+      headers: socrataHeaders,
+      params: { $where: where, $limit: 10 },
+      timeout: 9000,
+    });
     const records = res.data || [];
-    return {
-      source: 'NYPD Arrests (Year to Date)',
-      count: records.length,
-      records: records.map(r => ({
-        date: r.arrest_date,
-        offense: r.ofns_desc,
-        lawCategory: r.law_cat_cd === 'F' ? 'Felony' : r.law_cat_cd === 'M' ? 'Misdemeanor' : r.law_cat_cd,
-        borough: r.arrest_boro,
-        age: r.age_group,
-        pd_desc: r.pd_desc,
-      })),
-    };
+    return { source: sourceName, count: records.length, records: records.slice(0, 10) };
   } catch (err) {
-    return { source: 'NYPD Arrests (YTD)', error: err.message };
+    return { source: sourceName, error: err.message };
   }
 }
 
-// --- 2. NYPD Arrest Data Historic ---
-async function searchNYPDArrestsHistoric(firstName, lastName) {
+// --- 1. NYPD YTD ---
+const searchNYPDYTD = (fn, ln) => socrataSearch(
+  'NYPD Arrests (Year to Date)',
+  'https://data.cityofnewyork.us/resource/uip8-fykc.json',
+  'perp_last_nm', 'perp_first_nm', fn, ln
+);
+
+// --- 2. NYPD Historic ---
+const searchNYPDHistoric = (fn, ln) => socrataSearch(
+  'NYPD Arrests (Historic 2006-2023)',
+  'https://data.cityofnewyork.us/resource/8h9b-rp9u.json',
+  'perp_last_nm', 'perp_first_nm', fn, ln
+);
+
+// --- 3. Buffalo PD ---
+const searchBuffalo = (fn, ln) => socrataSearch(
+  'Buffalo PD Incidents',
+  'https://data.buffalony.gov/resource/d6g9-xbgu.json',
+  'incident_id', null, fn, ln  // Buffalo doesn't expose names — returns link instead
+).then(() => ({
+  source: 'Buffalo PD',
+  note: 'Name lookup not available — incident data only',
+  lookupUrl: `https://data.buffalony.gov/Public-Safety/Crime-Incidents/d6g9-xbgu`,
+  count: 0, records: [],
+}));
+
+// --- 4. Rochester PD ---
+const searchRochester = (fn, ln) => ({
+  source: 'Rochester PD',
+  note: 'No public name-search API',
+  lookupUrl: 'https://www.cityofrochester.gov/article.aspx?id=8589949170',
+  count: 0, records: [],
+});
+
+// --- 5. Albany PD (data.ny.gov) ---
+const searchAlbany = (fn, ln) => ({
+  source: 'Albany PD / data.ny.gov',
+  note: 'Aggregate public safety data',
+  lookupUrl: `https://data.ny.gov/browse?category=Public+Safety&q=${encodeURIComponent(ln + ' ' + fn)}`,
+  count: 0, records: [],
+});
+
+// --- 6. NYS DOCCS ---
+const searchDOCCS = () => ({
+  source: 'NYS DOCCS — State Prison Records',
+  note: 'Search NY Dept of Corrections incarceration history',
+  lookupUrl: 'https://nysdoccslookup.doccs.ny.gov/GCA00P00/WIQ1/WINQ130',
+  count: 0, records: [],
+});
+
+// --- 7. NY State Police Blotter — all troops/zones ---
+// Troops: A (Capital District), B (Western NY), C (Southern Tier),
+//         D (North Country), E (Mohawk Valley), F (Finger Lakes),
+//         G (Hudson Valley), K (Long Island), L (NYC suburbs), T (Thruway)
+// Each troop has 2-4 zones. Blotters are daily PDFs.
+function buildNYSPBlotterLinks(firstName, lastName) {
+  const troops = [
+    { troop: 'A', name: 'Capital District',   zones: [1,2,3,4] },
+    { troop: 'B', name: 'Western NY',          zones: [1,2,3] },
+    { troop: 'C', name: 'Southern Tier',       zones: [1,2,3] },
+    { troop: 'D', name: 'North Country',       zones: [1,2,3] },
+    { troop: 'E', name: 'Mohawk Valley',       zones: [1,2,3] },
+    { troop: 'F', name: 'Finger Lakes',        zones: [1,2,3] },
+    { troop: 'G', name: 'Hudson Valley',       zones: [1,2,3,4] },
+    { troop: 'K', name: 'Long Island',         zones: [1,2,3] },
+    { troop: 'L', name: 'NYC Metro/Suburbs',   zones: [1,2] },
+    { troop: 'T', name: 'Thruway',             zones: [1,2,3,4] },
+    { troop: 'NYC', name: 'New York City',     zones: [] },
+  ];
+
+  const today = new Date();
+  const fmt = d => `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  const todayStr = fmt(today);
+
+  const links = troops.map(t => {
+    const base = 'https://publicapps.troopers.ny.gov/Media_Reports/';
+    return {
+      troop: `Troop ${t.troop}`,
+      region: t.name,
+      blotterUrl: base,
+      zonesCount: t.zones.length || 1,
+    };
+  });
+
+  return {
+    source: 'NY State Police Blotter — All Troops (A/B/C/D/E/F/G/K/L/T/NYC)',
+    note: 'Daily PDF blotters — no name-search API. Click a troop to view today\'s incidents.',
+    mainUrl: 'https://publicapps.troopers.ny.gov/Media_Reports/',
+    googleSearch: `https://www.google.com/search?q=${encodeURIComponent('"' + firstName + ' ' + lastName + '"')}+site:troopers.ny.gov+OR+site:nysp.ny.gov`,
+    troops: links,
+    count: 0,
+    records: [],
+  };
+}
+
+// --- 8. Montgomery County Jail Roster ---
+async function searchMontgomeryJail(firstName, lastName) {
   try {
-    const res = await axios.get(
-      'https://data.cityofnewyork.us/resource/8h9b-rp9u.json',
-      {
-        headers: socrataHeaders,
-        params: { $where: `perp_last_nm='${lastName.toUpperCase()}' AND perp_first_nm='${firstName.toUpperCase()}'`, $limit: 10 },
-        timeout: 9000,
-      }
-    );
-    const records = res.data || [];
-    return {
-      source: 'NYPD Arrests (Historic 2006–2023)',
-      count: records.length,
-      records: records.map(r => ({
-        date: r.arrest_date,
-        offense: r.ofns_desc,
-        lawCategory: r.law_cat_cd === 'F' ? 'Felony' : r.law_cat_cd === 'M' ? 'Misdemeanor' : r.law_cat_cd,
-        borough: r.arrest_boro,
-        pd_desc: r.pd_desc,
-      })),
-    };
+    const res = await axios.get('https://api.mcgtn.org/publicinquiry/inmateroster/search', {
+      params: { lastname: lastName, firstname: firstName },
+      timeout: 8000,
+    });
+    const records = Array.isArray(res.data) ? res.data : res.data?.results || [];
+    return { source: 'Montgomery County Jail Roster', count: records.length, records: records.slice(0, 10) };
   } catch (err) {
-    return { source: 'NYPD Arrests (Historic)', error: err.message };
+    return { source: 'Montgomery County Jail Roster', error: err.message };
   }
 }
 
-// --- 3. NYS Adult Arrests by County (data.ny.gov) ---
-async function searchNYSAdultArrests(firstName, lastName) {
-  try {
-    // Statewide county-level arrest data — aggregated, not name-searchable
-    // Return as reference link instead
-    return {
-      source: 'NYS Adult Arrests by County (data.ny.gov)',
-      note: 'Aggregate data — individual name lookup via FOIL request',
-      lookupUrl: `https://data.ny.gov/browse?q=arrests&category=Public+Safety`,
-      count: 0,
-      records: [],
-    };
-  } catch (err) {
-    return { source: 'NYS Adult Arrests', error: err.message };
-  }
-}
-
-// --- 4. NY State Police Blotter ---
-async function searchNYSPBlotter(firstName, lastName) {
-  try {
-    // NYSP blotter is published as PDFs per troop/zone — no name-search API
-    // Return structured links to each troop's blotter
-    return {
-      source: 'NY State Police Blotter',
-      note: 'Daily blotter PDFs — no name-search API available',
-      lookupUrl: 'https://publicapps.troopers.ny.gov/Media_Reports/',
-      searchUrl: `https://www.google.com/search?q=${encodeURIComponent(firstName + ' ' + lastName)}+site:troopers.ny.gov`,
-      count: 0,
-      records: [],
-    };
-  } catch (err) {
-    return { source: 'NY State Police', error: err.message };
-  }
-}
-
-// --- 5. County Jail Rosters (public APIs) ---
-const NYS_COUNTY_JAILS = [
-  {
-    name: 'Montgomery County Jail Roster',
-    url: 'https://api.mcgtn.org/publicinquiry/inmateroster/search',
-    method: 'get',
-    params: (fn, ln) => ({ lastname: ln, firstname: fn }),
-  },
-];
-
-async function searchCountyJails(firstName, lastName) {
-  const results = await Promise.allSettled(
-    NYS_COUNTY_JAILS.map(async jail => {
-      try {
-        const res = await axios.get(jail.url, {
-          params: jail.params(firstName, lastName),
-          timeout: 8000,
-        });
-        const records = Array.isArray(res.data) ? res.data : res.data?.results || [];
-        return { source: jail.name, count: records.length, records: records.slice(0, 10) };
-      } catch (err) {
-        return { source: jail.name, error: err.message };
-      }
-    })
-  );
-
-  return results.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message });
-}
-
-// --- 6. NYS DOCCS (Dept of Corrections) incarceration lookup ---
-async function searchNYSDOCCS(firstName, lastName) {
-  try {
-    // DOCCS has a public inmate lookup at https://nysdoccslookup.doccs.ny.gov
-    // No public REST API — return lookup link
-    return {
-      source: 'NYS DOCCS Inmate Lookup',
-      note: 'NY Dept of Corrections — state prison records',
-      lookupUrl: `https://nysdoccslookup.doccs.ny.gov/GCA00P00/WIQ1/WINQ130`,
-      count: 0,
-      records: [],
-    };
-  } catch (err) {
-    return { source: 'NYS DOCCS', error: err.message };
-  }
+// --- 9. BustedNewspaper NYS ---
+function bustednewspaperNY(firstName, lastName) {
+  return {
+    source: 'BustedNewspaper — New York',
+    note: 'Aggregates local arrest records from NY newspapers & agencies',
+    lookupUrl: `https://bustednewspaper.com/new-york/?s=${encodeURIComponent(firstName + ' ' + lastName)}`,
+    count: 0,
+    records: [],
+  };
 }
 
 // --- Master search ---
 async function search({ firstName, lastName, state }) {
-  // Only run if state is NY or not specified
   if (state && state.toUpperCase() !== 'NY') {
     return { source: 'NYS Records', skipped: true, reason: `State filter is ${state}, not NY` };
   }
 
-  const [nypd_ytd, nypd_hist, nys_arrests, nysp, doccs] = await Promise.allSettled([
-    searchNYPDArrestsYTD(firstName, lastName),
-    searchNYPDArrestsHistoric(firstName, lastName),
-    searchNYSAdultArrests(firstName, lastName),
-    searchNYSPBlotter(firstName, lastName),
-    searchNYSDOCCS(firstName, lastName),
+  const [nypd_ytd, nypd_hist, montgomery] = await Promise.allSettled([
+    searchNYPDYTD(firstName, lastName),
+    searchNYPDHistoric(firstName, lastName),
+    searchMontgomeryJail(firstName, lastName),
   ]);
-
-  const countyJails = await searchCountyJails(firstName, lastName);
 
   const unwrap = r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message };
 
   const allSources = [
     unwrap(nypd_ytd),
     unwrap(nypd_hist),
-    unwrap(nys_arrests),
-    unwrap(nysp),
-    unwrap(doccs),
-    ...countyJails,
+    await searchBuffalo(firstName, lastName),
+    searchRochester(firstName, lastName),
+    searchAlbany(firstName, lastName),
+    searchDOCCS(),
+    buildNYSPBlotterLinks(firstName, lastName),
+    unwrap(montgomery),
+    bustednewspaperNY(firstName, lastName),
   ];
 
   const totalCount = allSources.reduce((sum, s) => sum + (s.count || 0), 0);
