@@ -88,58 +88,120 @@ async function maybeHandleOAuthRedirect() {
   } catch (e) { alert(`Login failed: ${e.message}`); }
 }
 
-// --- Report Renderer ---
+// ─── Report Renderer ───────────────────────────────────────────────
 
-function statusBadge(count, hasError) {
-  if (hasError) return '<span class="badge badge-error">Error</span>';
+function statusBadge(count, hasError, isLink) {
+  if (hasError)  return '<span class="badge badge-error">Error</span>';
+  if (isLink)    return '<span class="badge badge-link">Manual Check</span>';
   if (count > 0) return `<span class="badge badge-hit">${count} record${count !== 1 ? 's' : ''}</span>`;
   return '<span class="badge badge-clear">Clear</span>';
 }
 
+function linkBtn(label, url) {
+  if (!url) return '';
+  return `<a href="${url}" target="_blank" rel="noopener" class="link-btn">${label} &rarr;</a>`;
+}
+
 function renderRecordTable(records) {
-  if (!records || records.length === 0) return '';
-  const keys = Object.keys(records[0]).filter(k => records[0][k] !== null && records[0][k] !== undefined);
-  const header = keys.map(k => `<th>${k.replace(/_/g,' ')}</th>`).join('');
+  if (!records || !records.length) return '';
+  const keys = Object.keys(records[0]).filter(k =>
+    records[0][k] !== null && records[0][k] !== undefined && k !== 'url'
+  );
+  const urlKey = Object.keys(records[0]).find(k => k === 'url' || k === 'lookupUrl');
+  const header = keys.map(k => `<th>${k.replace(/_/g,' ')}</th>`).join('') + (urlKey ? '<th></th>' : '');
   const rows = records.map(r =>
-    `<tr>${keys.map(k => `<td>${r[k] !== null && r[k] !== undefined ? String(r[k]).slice(0, 120) : ''}</td>`).join('')}</tr>`
+    `<tr>${keys.map(k => `<td>${r[k] !== null && r[k] !== undefined ? String(r[k]).slice(0, 140) : '&mdash;'}</td>`).join('')}
+    ${urlKey && r[urlKey] ? `<td><a href="${r[urlKey]}" target="_blank" class="ext-link">View</a></td>` : (urlKey ? '<td></td>' : '')}
+    </tr>`
   ).join('');
   return `<div class="table-wrap"><table class="rec-table"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Render a single source block — always shows something
 function renderSource(key, data) {
   if (!data) return '';
-  const hasError = !!data.error;
-  const count = data.count ?? data.totalCount ?? (data.records?.length || 0);
-  const label = data.source || key;
+  if (data.skipped) return ''; // state-filtered out
+
+  const hasError  = !!data.error;
+  const count     = data.count ?? data.totalCount ?? (data.records?.length || 0);
+  const label     = data.source || key;
+
+  // Detect link-only sources (no real API result)
+  const isLinkOnly = !hasError && count === 0 &&
+    (data.lookupUrl || data.googleSearch || data.searchUrl || data.mainUrl) &&
+    !(data.records?.length) && !(data.byJurisdiction) && !(data.results);
 
   let body = '';
 
   if (hasError) {
+    // Still show lookup links even on error
     body = `<p class="rec-error">&#9888; ${data.error}</p>`;
-  } else if (data.records && data.records.length > 0) {
-    body = renderRecordTable(data.records);
+    if (data.lookupUrl) body += `<div class="link-row">${linkBtn('Search Manually', data.lookupUrl)}</div>`;
+
   } else if (data.byJurisdiction) {
-    // Arrest records — nested by city
+    // Nested multi-jurisdiction (arrests, nys, saratoga)
     body = data.byJurisdiction.map(j => {
-      if (j.error) return `<p class="rec-error">${j.source}: ${j.error}</p>`;
-      if (j.count === 0) return `<p class="muted">${j.source}: No records found</p>`;
-      return `<p><strong>${j.source}</strong></p>${renderRecordTable(j.records)}`;
-    }).join('');
+      if (!j || j.skipped) return '';
+      const jLinks = [j.lookupUrl, j.googleSearch, j.searchUrl, j.mainUrl].filter(Boolean);
+      let jBody = '';
+      if (j.error) {
+        jBody = `<span class="rec-error">${j.error}</span>`;
+        if (jLinks[0]) jBody += ` ${linkBtn('Check', jLinks[0])}`;
+      } else if (j.count > 0 && j.records?.length) {
+        jBody = renderRecordTable(j.records);
+      } else if (j.troops) {
+        // NYSP troop list
+        jBody = j.troops.map(t =>
+          `<span class="troop-tag">${t.troop} &mdash; ${t.region}</span>`
+        ).join('') + (j.mainUrl ? `<div class="link-row" style="margin-top:10px">${linkBtn('Open NYSP Blotter Portal', j.mainUrl)}${j.googleSearch ? linkBtn('Search by Name', j.googleSearch) : ''}</div>` : '');
+      } else {
+        // Link-only sub-source — always show name + links
+        jBody = jLinks.map((u, i) => linkBtn(i === 0 ? 'Open' : (j.googleSearch === u ? 'Search by Name' : 'Search'), u)).join(' ');
+        if (j.note)  jBody += `<p class="source-note">${j.note}</p>`;
+        if (j.note2) jBody += `<p class="source-note">${j.note2}</p>`;
+        if (j.phone) jBody += `<p class="source-note">&#128222; ${j.phone}</p>`;
+        if (j.address) jBody += `<p class="source-note">&#128205; ${j.address}</p>`;
+      }
+      return `<div class="sub-source"><div class="sub-source-name">${j.source || ''}</div><div class="sub-source-body">${jBody}</div></div>`;
+    }).filter(Boolean).join('');
+
   } else if (data.results) {
     body = data.results.map(r => {
-      if (r.lookupUrl) return `<p><a href="${r.lookupUrl}" target="_blank" class="ext-link">&#128269; ${r.source} &rarr; Search manually</a><br><span class="muted">${r.note || ''}</span></p>`;
-      if (r.error) return `<p class="rec-error">${r.error}</p>`;
-      return `<p class="muted">${r.source}: No data</p>`;
+      if (r.lookupUrl) return `<div class="link-row">${linkBtn(r.source || 'Search', r.lookupUrl)}<span class="source-note">${r.note || ''}</span></div>`;
+      if (r.error)     return `<p class="rec-error">${r.error}</p>`;
+      return '';
     }).join('');
+
+  } else if (count > 0 && data.records?.length) {
+    body = renderRecordTable(data.records);
+    if (data.lookupUrl) body += `<div class="link-row" style="margin-top:8px">${linkBtn('View Full Record', data.lookupUrl)}</div>`;
+
+  } else if (isLinkOnly) {
+    // Link-only source — render rich card with all links and metadata
+    const links = [
+      data.lookupUrl   && linkBtn('Open', data.lookupUrl),
+      data.searchUrl   && linkBtn('Case Search', data.searchUrl),
+      data.googleSearch && linkBtn('Search by Name', data.googleSearch),
+      data.mainUrl     && linkBtn('Open Portal', data.mainUrl),
+    ].filter(Boolean);
+    body = `<div class="link-row">${links.join('')}</div>`;
+    if (data.note)    body += `<p class="source-note">${data.note}</p>`;
+    if (data.note2)   body += `<p class="source-note">${data.note2}</p>`;
+    if (data.phone)   body += `<p class="source-note">&#128222; ${data.phone}</p>`;
+    if (data.address) body += `<p class="source-note">&#128205; ${data.address}</p>`;
+
   } else {
-    body = `<p class="muted">No records found.</p>`;
+    body = `<p class="muted">No records found in this database.</p>`;
+    if (data.lookupUrl) body += `<div class="link-row">${linkBtn('Verify Manually', data.lookupUrl)}</div>`;
   }
 
+  const borderClass = hasError ? 'source-error' : isLinkOnly ? 'source-link' : count > 0 ? 'source-hit' : 'source-clear';
+
   return `
-    <div class="report-source ${hasError ? 'source-error' : count > 0 ? 'source-hit' : 'source-clear'}">
+    <div class="report-source ${borderClass}">
       <div class="source-header">
         <span class="source-name">${label}</span>
-        ${statusBadge(count, hasError)}
+        ${statusBadge(count, hasError, isLinkOnly)}
       </div>
       <div class="source-body">${body}</div>
     </div>`;
@@ -147,8 +209,9 @@ function renderSource(key, data) {
 
 function renderReport(data, query) {
   const { meta, ...sources } = data;
-  const allCounts = Object.values(sources).reduce((sum, s) => sum + (s?.count ?? s?.totalCount ?? (s?.records?.length || 0)), 0);
-  const hasHits = allCounts > 0;
+  const totalHits = Object.values(sources).reduce((sum, s) =>
+    sum + (s?.count ?? s?.totalCount ?? (s?.records?.length || 0)), 0);
+  const hasHits = totalHits > 0;
 
   const summary = `
     <div class="report-header">
@@ -158,30 +221,36 @@ function renderReport(data, query) {
         <p class="muted report-time">Generated ${new Date(meta?.timestamp || Date.now()).toLocaleString()}</p>
       </div>
       <div class="report-verdict ${hasHits ? 'verdict-hit' : 'verdict-clear'}">
-        ${hasHits ? '&#9888; Records Found' : '&#10003; No Records Found'}
+        ${hasHits ? '&#9888; Records Found' : '&#10003; No Automatic Hits'}
       </div>
     </div>`;
 
-  const sourceKeys = Object.keys(sources);
-  const rendered = sourceKeys.map(k => renderSource(k, sources[k])).join('');
-
+  const rendered = Object.keys(sources).map(k => renderSource(k, sources[k])).join('');
   return `${summary}<div class="report-sources">${rendered}</div>`;
 }
 
 function mockResults(payload) {
   return {
-    courtListener: { source: 'CourtListener', count: 1, records: [{ caseName: `${payload.firstName} ${payload.lastName} v. Example Corp`, court: 'S.D.N.Y.', dateFiled: '2019-03-12', status: 'Closed' }] },
+    courtListener: { source: 'CourtListener', count: 1, records: [{ caseName: `${payload.firstName} ${payload.lastName} v. Example Corp`, court: 'S.D.N.Y.', dateFiled: '2019-03-12', status: 'Closed', url: 'https://www.courtlistener.com' }] },
     nsopw:         { source: 'NSOPW', count: 0, records: [] },
     openSanctions: { source: 'OpenSanctions', count: 0, records: [] },
     judyRecords:   { source: 'JudyRecords', count: 0, records: [] },
     fbi:           { source: 'FBI Most Wanted', count: 0, records: [] },
     ofac:          { source: 'OFAC Sanctions', count: 0, records: [] },
     interpol:      { source: 'Interpol', count: 0, records: [] },
+    saratogaCounty: {
+      source: 'Saratoga County, NY — Public Safety Records',
+      totalCount: 0,
+      byJurisdiction: [
+        { source: 'Saratoga County Sheriff — Jail Roster', count: 0, records: [], lookupUrl: 'https://saratogacountysheriff.gov/corrections-division/', note: 'Active inmates at Saratoga County Correctional Facility', phone: '(518) 885-6761' },
+        { source: 'NYSP Troop G — Hudson Valley Blotter', count: 0, records: [], mainUrl: 'https://publicapps.troopers.ny.gov/Media_Reports/', googleSearch: `https://www.google.com/search?q=${encodeURIComponent('"' + payload.firstName + ' ' + payload.lastName + '"')}+site:troopers.ny.gov` },
+      ]
+    },
     meta: { query: payload, timestamp: new Date().toISOString() }
   };
 }
 
-// --- Events ---
+// ─── Events ────────────────────────────────────────────────────────
 
 loginBtn.addEventListener('click', () => {
   if (!config.githubClientId) { alert('Set githubClientId in config.js'); return; }
